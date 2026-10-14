@@ -16,9 +16,9 @@ services:
       - key: REQUIRE_ADMIN_PASSWORD
         value: "true"
       - key: ADMIN_PASSWORD
-        sync: false
+        sync: true
       - key: ALLOWED_ORIGIN
-        sync: false
+        sync: true
     disk:
       name: modul-materials
       mountPath: /var/data
