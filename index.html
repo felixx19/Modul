@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modul Pemrograman Web - Herlian Dwi Prianka</title>
+    <script src="api-config.js"></script>
     <!-- Tailwind CSS CDN -->
     <style type="text/tailwindcss"></style>
     <script>
@@ -75,8 +76,11 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        const API_BASE_URL = (window.MODULE_API_BASE || '').replace(/\/+$/, '');
+        const apiUrl = (path) => `${API_BASE_URL}${path}`;
+
         const fetchMaterialFiles = async () => {
-            const response = await fetch('/api/materials', { cache: 'no-store' });
+            const response = await fetch(apiUrl('/api/materials'), { cache: 'no-store' });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Daftar materi tidak dapat dimuat.');
             return result.files;
@@ -91,7 +95,7 @@
                     const session = JSON.parse(storedSession);
                     if (
                         typeof session.username === 'string' &&
-                        (session.role === 'admin' || session.role === 'guest')
+                        (session.role === 'guest' || (session.role === 'admin' && typeof session.token === 'string'))
                     ) {
                         return session;
                     }
@@ -104,6 +108,7 @@
             });
             const [loginUsername, setLoginUsername] = React.useState('');
             const [loginPassword, setLoginPassword] = React.useState('');
+            const [loginError, setLoginError] = React.useState('');
             const [materialFiles, setMaterialFiles] = React.useState([]);
             const [uploadError, setUploadError] = React.useState('');
             const [isUploading, setIsUploading] = React.useState(false);
@@ -142,7 +147,7 @@
                     } catch (error) {
                         if (!cancelled) {
                             console.error('Gagal memuat file dari Source/Mentah/.', error);
-                            setUploadError(`Daftar materi tidak dapat dimuat. Jalankan java server.java dari folder proyek lalu buka http://127.0.0.1:8000/modul.html. ${error.message}`);
+                            setUploadError(`Daftar materi tidak dapat dimuat. Pastikan backend API sudah aktif dan api-config.js berisi URL backend yang benar. ${error.message}`);
                         }
                     }
                 };
@@ -411,12 +416,34 @@ public class ActionServlet extends HttpServlet {
                 setTimeout(() => setCopiedIndex(null), 2000);
             };
 
-            const handleLogin = (event) => {
+            const handleLogin = async (event) => {
                 event.preventDefault();
-                const isAdmin = loginUsername === 'Admin_Root' && loginPassword === 'password';
+                setLoginError('');
+                let token = null;
+                if (loginUsername === 'Admin_Root') {
+                    try {
+                        const response = await fetch(apiUrl('/api/session'), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams({ username: loginUsername, password: loginPassword })
+                        });
+                        const result = await response.json();
+                        if (response.ok) {
+                            token = result.token;
+                        } else if (response.status !== 401) {
+                            throw new Error(result.error || 'Login Administrator_Root gagal.');
+                        }
+                    } catch (error) {
+                        console.error('Layanan login Administrator_Root tidak dapat dihubungi.', error);
+                        setLoginError(`Layanan login admin tidak dapat dihubungi: ${error.message}`);
+                        return;
+                    }
+                }
+                const isAdmin = token !== null;
                 const session = {
                     username: loginUsername,
-                    role: isAdmin ? 'admin' : 'guest'
+                    role: isAdmin ? 'admin' : 'guest',
+                    ...(isAdmin ? { token } : {})
                 };
 
                 localStorage.setItem('cyberModuleLogin', JSON.stringify(session));
@@ -427,6 +454,12 @@ public class ActionServlet extends HttpServlet {
             };
 
             const handleLogout = () => {
+                if (auth.role === 'admin' && auth.token) {
+                    fetch(apiUrl('/api/session'), {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${auth.token}` }
+                    }).catch((error) => console.error('Sesi admin gagal dicabut dari server.', error));
+                }
                 localStorage.removeItem('cyberModuleLogin');
                 setAuth(null);
                 setLoginUsername('');
@@ -449,11 +482,11 @@ public class ActionServlet extends HttpServlet {
                 setIsUploading(true);
                 setUploadError('');
                 try {
-                    const response = await fetch(`/api/materials?filename=${encodeURIComponent(file.name)}`, {
+                    const response = await fetch(apiUrl(`/api/materials?filename=${encodeURIComponent(file.name)}`), {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/octet-stream',
-                            'X-Module-Role': auth.role
+                            Authorization: `Bearer ${auth.token}`
                         },
                         body: file
                     });
@@ -474,9 +507,9 @@ public class ActionServlet extends HttpServlet {
 
                 setUploadError('');
                 try {
-                    const response = await fetch(`/api/materials/${encodeURIComponent(material.filename)}`, {
+                    const response = await fetch(apiUrl(`/api/materials/${encodeURIComponent(material.filename)}`), {
                         method: 'DELETE',
-                        headers: { 'X-Module-Role': auth.role }
+                        headers: { Authorization: `Bearer ${auth.token}` }
                     });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error || 'File gagal dihapus.');
@@ -523,6 +556,7 @@ public class ActionServlet extends HttpServlet {
                                     />
                                 </label>
                             </div>
+                            {loginError && <p role="alert" className="text-sm text-red-400">{loginError}</p>}
                             <button
                                 type="submit"
                                 className="w-full rounded bg-cyber-green px-4 py-3 font-bold text-cyber-dark transition hover:opacity-90"
@@ -661,7 +695,7 @@ public class ActionServlet extends HttpServlet {
                                             </div>
                                         </div>
                                         <div className="flex shrink-0 flex-wrap gap-2">
-                                            <a href={`Source/Mentah/${encodeURIComponent(item.filename)}`} download className="bg-cyber-green text-cyber-dark px-4 py-2 rounded font-bold text-xs hover:opacity-90 transition">
+                                            <a href={apiUrl(`/Source/Mentah/${encodeURIComponent(item.filename)}`)} download className="bg-cyber-green text-cyber-dark px-4 py-2 rounded font-bold text-xs hover:opacity-90 transition">
                                                 <i className="fa-solid fa-download mr-2"></i> DOWNLOAD
                                             </a>
                                             {auth.role === 'admin' && (
