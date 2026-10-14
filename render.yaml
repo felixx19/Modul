@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: modul-pemrograman-web-api
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: MATERIALS_DIR
+        value: /var/data/materials
+      - key: INITIAL_MATERIALS_DIR
+        value: /app/initial-materials
+      - key: HOST
+        value: 0.0.0.0
+      - key: REQUIRE_ADMIN_PASSWORD
+        value: "true"
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+    disk:
+      name: modul-materials
+      mountPath: /var/data
+      sizeGB: 1
